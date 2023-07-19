@@ -1,10 +1,12 @@
 ---
-title: "<center> OPLA POLA RNAseq analysis <center>"
+title: "<center> SFA vs. PUFA RNAseq analysis <center>"
 author: "<center> Felix Westcott <center><br>"
 date: "<center> _`r Sys.Date()`_ <center>"
 ---
 
 ```{r setup, include=FALSE}
+# setRepositories()
+# install.packages("edgeR")
 
 library(tidyverse)
 library(edgeR)
@@ -28,22 +30,23 @@ library(ggsci)
 library(ggprism)
 library(Glimma)
 library(fgsea)
+library(readxl)
+library(xlsx)
 
 ```
 
 ``` {R Loading data}
 # Load data
-Raw_counts <- read.delim ('Counts.txt')
-samplemetadata <-read.csv ('Sample_info.csv')
+Raw_counts <- read_excel ('Counts.xlsx')
+samplemetadata <-read_excel ('Sample_info.xlsx')
 
 group <- factor(samplemetadata$media)
 exp <- factor(samplemetadata$exp)
-conc <- factor(samplemetadata$conc)
-fat <- factor(samplemetadata$fat)
+conc <- factor(samplemetadata$concentration)
 
 # Turn raw count data into matrix with only relevant parts
 geneID <- Raw_counts$gene_name
-Raw_counts <- as.matrix(Raw_counts[,2:26])
+Raw_counts <- as.matrix(Raw_counts[,c(2:14, 23:33)])
 rownames(Raw_counts) <- geneID
 
 # Create a DGEList from raw count matrix
@@ -54,7 +57,7 @@ log2.cpm <- cpm(myDGEList, log=TRUE)
 
 log2.cpm <- as_tibble(log2.cpm, rownames = "geneID")
 log2.cpm.pivot <- pivot_longer(log2.cpm,
-                                  cols = EC1C:EC5P8, 
+                                  cols = N2:P6, 
                                   names_to = "samples",
                                   values_to = "expression")
 
@@ -91,7 +94,7 @@ log2.cpm.filtered.norm <- cpm(myDGEList.filtered.norm, log=TRUE)
 log2.cpm.filtered.norm.df <- as_tibble(log2.cpm.filtered.norm, rownames = "geneID")
 
 log2.cpm.filtered.norm.df.pivot <- pivot_longer(log2.cpm.filtered.norm.df, 
-                                                cols = EC1C:EC5P8, 
+                                                cols = N2:P6, 
                                                 names_to = "samples", 
                                                 values_to = "expression")
 
@@ -114,20 +117,19 @@ ggplot(log2.cpm.filtered.norm.df.pivot) +
 
 ``` {R Gene Expression Data}
 
-# Creating a log2cpm gene expression df with averages for each condition
+# Creating a table of log2cpm gene expression df with averages for each condition
 Avg.gene_expression <- log2.cpm.filtered.norm.df %>% 
-  mutate(Control = (EC1C + EC2C + EC3C + EC4C + EC5C)/5,
-         OPLA200 = (EC1O2 + EC2O2 + EC3O2 + EC4O2 + EC5O2)/5,
-         OPLA800 = (EC1O8 + EC2O8 + EC3O8 + EC4O8 + EC5O8)/5,
-         POLA200 = (EC1P2 + EC2P2 + EC3P2 + EC4P2 + EC5P2)/5,
-         POLA800 = (EC1P8 + EC2P8 + EC3P8 + EC4P8 + EC5P8)/5) %>% 
+  mutate(No_Fat = (N1 + N2 + N3 + N4 + N5 + N6)/6,
+         OA = (O1 + O2 + O3 + O4 + O5 + O6)/6,
+         SFA = (S1 + S2 + S3 + S4 + S5 + S6)/6,
+         PUFA = (P1 + P2 + P3 + P4 + P5 + P6)/6) %>% 
     mutate_if(is.numeric, round, 2) %>%
-  dplyr::select(geneID, Control, OPLA200, OPLA800,POLA200,POLA800)
+  dplyr::select(geneID, No_Fat, OA, SFA, PUFA)
 
 datatable(Avg.gene_expression, 
           extensions = c('KeyTable', "FixedHeader"), 
           filter = 'top',
-          caption = 'Table 1: log2 CPM of filtered and normalised genes in Control, OPLA and POLA',
+          caption = 'Table 1: log2 CPM of filtered and normalised genes across different media conditions',
           options = list(keys = TRUE, 
                          searchHighlight = TRUE, 
                          pageLength = 10, 
@@ -139,9 +141,8 @@ datatable(Avg.gene_expression,
 
 #myDGEList.filtered.norm$samples$exp <- exp
 #myDGEList.filtered.norm$samples$conc <- conc
-#myDGEList.filtered.norm$samples$fat <- fat
 
-#glMDSPlot(log2.cpm.filtered.norm, labels=paste(exp, conc, fat, sep="_"), groups=myDGEList.filtered.norm$samples[,c(1,4,5,6)], launch=TRUE)
+#glMDSPlot(log2.cpm.filtered.norm, labels=paste(exp, conc, sep="_"), groups=myDGEList.filtered.norm$samples[,c(1,4,5)], launch=TRUE)
 
 ```
 
@@ -162,7 +163,7 @@ fviz_eig(pca.res, addlabels = TRUE, ylim = c(0,100))
 
 fviz_pca_ind(pca.res, geom.ind = "point", pointshape = 21, 
              pointsize = 2, 
-             fill.ind = exp,
+             fill.ind = group,
              palette = "npg",
              col.ind = "black", 
              addEllipses = TRUE,
@@ -213,7 +214,7 @@ theme(axis.text.x = element_text(color = "black", size = 8, angle = 0, hjust = .
 
 ```  {R, Mixed Model}
 
-#OK there's a lot here to explain so listen up
+#OK there's a lot here to explain so listen up: we are making a MIXED RANDOM EFFECTS MODEL (aka. blocking)
 
 #First of all we make a design matrix for the purposes of this we only care about the fixed effect of "group" variable which codes both fat conc and composition combined into one variable. The 0 at the front of the matrix model formula shows that we do not want an intercept because we want to compare all factors in group to each other and not just to control and it's a lot easier to code for this when there's no intercept (but otherwise makes no difference to the actual model as group is a factor). 
 
@@ -223,10 +224,11 @@ design
 
 #We then make our contrast matrix which dictates all the contrasts we will be interested in, simple as that.
 contrasts <- makeContrasts(
-   HFvLF = (OPLA800 + POLA800)/2 - (OPLA200 + POLA200)/2,
-   HFvC = (OPLA800 + POLA800)/2 - Control, 
-   LFvC = (OPLA200 + POLA200)/2 - Control,
-   PvO = (POLA200 + POLA800)/2 - (OPLA200 + OPLA800)/2,
+   FvNF = (OA + SFA + PUFA)/3 - No_Fat,
+   SFAvPUFA = (SFA) - PUFA, 
+   OAvNF = OA - No_Fat,
+   SFAvOA = SFA - OA,
+   PUFAvOA = PUFA - OA,
    levels = colnames(design))
 rownames(contrasts) <- gsub("group", "", rownames(contrasts))
 contrasts
@@ -255,7 +257,7 @@ vfit <- lmFit(object=v, design=design,
   block=exp, correlation=cor$consensus.correlation)
 vfit <- contrasts.fit(vfit, contrasts=contrasts)
 efit1 <- eBayes(vfit)
-tfit1 <- treat(vfit, lfc=0.2)
+tfit1 <- treat(vfit, lfc=0)
 plotSA(tfit1)
 
 # references: 
@@ -274,43 +276,44 @@ summary(dt1)
 
 ```{R, Venn Diagrams and volcano plots!}
 
-vennDiagram(dt1[,2:3], circle.col=c("turquoise", "salmon"))
+vennDiagram(dt1[,1:2:3], circle.col=c("turquoise", "salmon"))
 
-HFvLF <- topTreat(tfit1, coef=1, n=Inf)
-HFvC <- topTreat(tfit1, coef=2, n=Inf)
-LFvC <- topTreat(tfit1, coef=3, n=Inf)
-PvO <- topTreat(tfit1, coef=4, n=Inf)
+FvNF <- topTreat(tfit1, coef=1, n=Inf)
+SFAvPUFA <- topTreat(tfit1, coef=2, n=Inf)
+OAvNF <- topTreat(tfit1, coef=3, n=Inf)
+SFAvOA <- topTreat(tfit1, coef=4, n=Inf)
+PUFAvOA <- topTreat(tfit1, coef = 5, n=Inf)
 
 # Almost exactly the same just all in one place and made to look better 
 
-EnhancedVolcano(HFvLF,
-    lab = HFvLF$ID,
+EnhancedVolcano(FvNF,
+    lab = FvNF$ID,
     x = 'logFC',
     y = 'adj.P.Val',
     legendPosition = "right",
     legendLabSize = 12,
     legendIconSize = 3,
     labSize = 3,
-    subtitle = "HF vs LF",
+    subtitle = "Fat vs No Fat",
     pCutoff = 0.05, 
     FCcutoff = 0.2)
 
 
-EnhancedVolcano(HFvC,
-    lab = HFvC$ID,
+EnhancedVolcano(SFAvPUFA,
+    lab = SFAvPUFA$ID,
     x = 'logFC',
     y = 'adj.P.Val',
     legendPosition = "right",
     legendLabSize = 12,
     legendIconSize = 3,
     labSize = 3,
-    subtitle = "HF vs C",
+    subtitle = "SFA vs PUFA",
     pCutoff = 0.05, 
     FCcutoff = 0.2)
 
 
-EnhancedVolcano(LFvC,
-    lab = LFvC$ID,
+EnhancedVolcano(SFAvPUFA,
+    lab = SFAvPUFA$ID,
     x = 'logFC',
     y = 'adj.P.Val',
     legendPosition = "right",
@@ -334,11 +337,8 @@ EnhancedVolcano(PvO,
     FCcutoff = 0.2)
 
 #Interactive volcano plot for HF v LF (change the columns of the data frames to make it for other comparisons)
-glXYPlot(x=efit1$coef[,4], y=efit1$lods[,4], xlab="logFC", ylab="logP", status=dt1[,4], counts=log2.cpm.filtered.norm, groups=group, launch = TRUE, sample.cols=group)
+glXYPlot(x=efit1$coef[,1], y=efit1$lods[,1], xlab="logFC", ylab="logP", status=dt1[,1], counts=log2.cpm.filtered.norm, groups=group, launch = TRUE, sample.cols=group)
 
-#glimmaVolcano(tfit1, coef = 1, status = dt1, main=colnames(tfit1)[1], side.main="ID", counts=log2.cpm.filtered.norm, transform = "none", groups=group, launch=TRUE)
-
-#glMDPlot(tfit1, coef=4, status=dt1, main=colnames(tfit1)[4], side.main="ID", counts=log2.cpm.filtered.norm, groups=group, launch=TRUE)
 
 ```
 
@@ -356,13 +356,13 @@ datatable(dt1,
 
 # Pivot to tidy up data
 Avg.gene_expression.pivot <- pivot_longer(Avg.gene_expression, 
-                          cols = Control : POLA800, 
+                          cols = No_Fat : PUFA, 
                           names_to = "group", 
                           values_to = "lcpm")
 
 #  Filter for genes you want. grepl will pick out any with that phrase in it. Use " x|y|z|etc." notation to search for multiple genes. 
 graph <- Avg.gene_expression.pivot %>%
-  dplyr::filter(grepl('SERPINA1', geneID))
+  dplyr::filter(grepl('CD36', geneID))
 
 # Graph error bars were a step too far for me as they got messed up with the facet wrap
 ggbarplot(graph, "group", "lcpm", add = "mean_se", palette = "npg", legend = "none", fill = "group", xlab = "Media", ylab = "counts per million (log2)") +
@@ -370,7 +370,8 @@ ggbarplot(graph, "group", "lcpm", add = "mean_se", palette = "npg", legend = "no
   theme(legend.position = "none", legend.title = element_text()) +
   scale_x_discrete(labels = function(x) str_wrap(x, width = 1)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.22)))
-#ggsave('C:/Users/fwestcott/OneDrive - Nexus365/Desktop/RNAseq Graph2.png')
+
+ggsave("Graphs/RNAseq CD36 Expression.png")
 
 ```
 
@@ -394,21 +395,21 @@ heatmap.2(selected_genes, scale="row",
 ```
 
 
-```{R, HFvLF Functional enrichment analysis}
+```{R, FvNF Functional enrichment analysis}
 
-diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
+diffGenes.FvNF <- rownames(filter(dt1, dt1$FvNF != 0))
 
-diffGenes.HFvLF <- HFvLF[HFvLF$ID %in% diffGenes.HFvLF, ] %>%
+diffGenes.FvNF <- FvNF[FvNF$ID %in% diffGenes.FvNF, ] %>%
 rename("SYMBOL" = ID)
 
-diffGenes.HFvLF <- diffGenes.HFvLF %>% 
+diffGenes.FvNF <- diffGenes.FvNF %>% 
     dplyr::select(SYMBOL, t) %>% 
     na.omit() %>% 
     distinct() %>% 
     group_by(SYMBOL) %>% 
     summarize(stat=mean(t))
 
-ranks <- deframe(diffGenes.HFvLF)
+ranks <- deframe(diffGenes.FvNF)
 
 # Load the pathways into a named list
 pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
@@ -433,65 +434,65 @@ ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
   theme_minimal()
 
 #KEGG
-diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
+diffGenes.FvNF <- rownames(filter(dt1, dt1$FvNF != 0))
 
-diffGenes.HFvLF <- HFvLF[HFvLF$ID %in% diffGenes.HFvLF, ] %>%
+diffGenes.FvNF <- FvNF[FvNF$ID %in% diffGenes.FvNF, ] %>%
 rename("SYMBOL" = ID)
 
-entrez <- bitr(diffGenes.HFvLF$SYMBOL, fromType = "SYMBOL",
+entrez <- bitr(diffGenes.FvNF$SYMBOL, fromType = "SYMBOL",
                  toType = "ENTREZID",
                  OrgDb="org.Hs.eg.db")
 
-deg_HFvLF_enrich <- diffGenes.HFvLF %>% left_join(entrez,.,by="SYMBOL")
+deg_FvNF_enrich <- diffGenes.FvNF %>% left_join(entrez,.,by="SYMBOL")
 
-HFvLF_kegg_gene_list <- deg_HFvLF_enrich$logFC
+FvNF_kegg_gene_list <- deg_FvNF_enrich$logFC
 
-names(HFvLF_kegg_gene_list) <- deg_HFvLF_enrich$ENTREZID
+names(FvNF_kegg_gene_list) <- deg_FvNF_enrich$ENTREZID
 
-HFvLF_kegg_gene_list<-na.omit(HFvLF_kegg_gene_list)
+FvNF_kegg_gene_list<-na.omit(FvNF_kegg_gene_list)
 
-HFvLF_kegg_gene_list = sort(HFvLF_kegg_gene_list, decreasing = TRUE)
+FvNF_kegg_gene_list = sort(FvNF_kegg_gene_list, decreasing = TRUE)
 
-HFvLF_kk <- gseKEGG(geneList     = HFvLF_kegg_gene_list,
+FvNF_kk <- gseKEGG(geneList     = FvNF_kegg_gene_list,
                organism     = "hsa")
 
-dotplot(HFvLF_kk, showCategory = 5, title = "HFvLF Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
- # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/HFvLF GSEA.png")
+dotplot(FvNF_kk, showCategory = 5, title = "FvNF Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
+ # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/FvNF GSEA.png")
 
-edox <- setReadable(HFvLF_kk, 'org.Hs.eg.db', 'ENTREZID')
+edox <- setReadable(FvNF_kk, 'org.Hs.eg.db', 'ENTREZID')
 
-cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=HFvLF_kegg_gene_list)
+cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=FvNF_kegg_gene_list)
 
 ```
 
 
-``` {R HFvLF pathway enrichment, warning=FALSE}
-setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/Pathview")
+``` {R FvNF pathway enrichment, warning=FALSE}
+setwd("Pathview")
 
 #This is the same as before
-fc.vector <- as.numeric(deg_HFvLF_enrich[, 3])
-names(fc.vector) <- (deg_HFvLF_enrich[, 2])
+fc.vector <- as.numeric(deg_FvNF_enrich[, 3])
+names(fc.vector) <- (deg_FvNF_enrich[, 2])
 de.names <- names(fc.vector) 
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04140",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa00010",species  = "hsa")
 
 ```
 
-``` {R LFvC function enrichment analysis}
+``` {R SFAvPUFA function enrichment analysis}
 #MSigDb Hallmarks
-diffGenes.LFvC <- rownames(filter(dt1, dt1$LFvC != 0))
+diffGenes.SFAvPUFA <- rownames(filter(dt1, dt1$SFAvPUFA != 0))
 
-diffGenes.LFvC <- LFvC[LFvC$ID %in% diffGenes.LFvC, ] %>%
+diffGenes.SFAvPUFA <- SFAvPUFA[SFAvPUFA$ID %in% diffGenes.SFAvPUFA, ] %>%
 rename("SYMBOL" = ID)
 
-diffGenes.LFvC <- diffGenes.LFvC %>% 
+diffGenes.SFAvPUFA <- diffGenes.SFAvPUFA %>% 
     dplyr::select(SYMBOL, t) %>% 
     na.omit() %>% 
     distinct() %>% 
     group_by(SYMBOL) %>% 
     summarize(stat=mean(t))
 
-ranks <- deframe(diffGenes.LFvC)
+ranks <- deframe(diffGenes.SFAvPUFA)
 
 pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
 
@@ -514,43 +515,43 @@ ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
   theme_minimal()
 
 #Kegg
-diffGenes.LFvC <- rownames(filter(dt1, dt1$LFvC != 0))
+diffGenes.SFAvPUFA <- rownames(filter(dt1, dt1$SFAvPUFA != 0))
 
-diffGenes.LFvC <- LFvC[LFvC$ID %in% diffGenes.LFvC, ] %>%
+diffGenes.SFAvPUFA <- SFAvPUFA[SFAvPUFA$ID %in% diffGenes.SFAvPUFA, ] %>%
 rename("SYMBOL" = ID)
 
-entrez <- bitr(diffGenes.LFvC$SYMBOL, fromType = "SYMBOL",
+entrez <- bitr(diffGenes.SFAvPUFA$SYMBOL, fromType = "SYMBOL",
                  toType = "ENTREZID",
                  OrgDb="org.Hs.eg.db")
 
-deg_LFvC_enrich <- diffGenes.LFvC %>% left_join(entrez,.,by="SYMBOL")
+deg_SFAvPUFA_enrich <- diffGenes.SFAvPUFA %>% left_join(entrez,.,by="SYMBOL")
 
-LFvC_kegg_gene_list <- deg_LFvC_enrich$logFC
+SFAvPUFA_kegg_gene_list <- deg_SFAvPUFA_enrich$logFC
 
-names(LFvC_kegg_gene_list) <- deg_LFvC_enrich$ENTREZID
+names(SFAvPUFA_kegg_gene_list) <- deg_SFAvPUFA_enrich$ENTREZID
 
-LFvC_kegg_gene_list<-na.omit(LFvC_kegg_gene_list)
+SFAvPUFA_kegg_gene_list<-na.omit(SFAvPUFA_kegg_gene_list)
 
-LFvC_kegg_gene_list = sort(LFvC_kegg_gene_list, decreasing = TRUE)
+SFAvPUFA_kegg_gene_list = sort(SFAvPUFA_kegg_gene_list, decreasing = TRUE)
 
-LFvC_kk <- gseKEGG(geneList     = LFvC_kegg_gene_list,
+SFAvPUFA_kk <- gseKEGG(geneList     = SFAvPUFA_kegg_gene_list,
                organism     = "hsa")
 
-dotplot(LFvC_kk, showCategory = 5, title = "LFvC Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
- # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/LFvC GSEA.png")
+dotplot(SFAvPUFA_kk, showCategory = 5, title = "SFAvPUFA Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
+ # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/SFAvPUFA GSEA.png")
 
-edox <- setReadable(LFvC_kk, 'org.Hs.eg.db', 'ENTREZID')
+edox <- setReadable(SFAvPUFA_kk, 'org.Hs.eg.db', 'ENTREZID')
 
-cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=LFvC_kegg_gene_list)
+cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=SFAvPUFA_kegg_gene_list)
 ```
 
 
-``` {R LFvC pathway enrichment, warning=FALSE}
+``` {R SFAvPUFA pathway enrichment, warning=FALSE}
 setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/Pathview")
 
 #This is the same as before
-fc.vector <- as.numeric(deg_LFvC_enrich[, 3])
-names(fc.vector) <- (deg_LFvC_enrich[, 2])
+fc.vector <- as.numeric(deg_SFAvPUFA_enrich[, 3])
+names(fc.vector) <- (deg_SFAvPUFA_enrich[, 2])
 de.names <- names(fc.vector)
 
 pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
