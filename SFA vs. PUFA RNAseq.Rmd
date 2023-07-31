@@ -276,7 +276,7 @@ summary(dt1)
 
 ```{R, Venn Diagrams and volcano plots!}
 
-vennDiagram(dt1[,1:2:3], circle.col=c("turquoise", "salmon"))
+vennDiagram(dt1[,1:2], circle.col=c("turquoise", "salmon"))
 
 FvNF <- topTreat(tfit1, coef=1, n=Inf)
 SFAvPUFA <- topTreat(tfit1, coef=2, n=Inf)
@@ -312,31 +312,7 @@ EnhancedVolcano(SFAvPUFA,
     FCcutoff = 0.2)
 
 
-EnhancedVolcano(SFAvPUFA,
-    lab = SFAvPUFA$ID,
-    x = 'logFC',
-    y = 'adj.P.Val',
-    legendPosition = "right",
-    legendLabSize = 12,
-    legendIconSize = 3,
-    labSize = 3,
-    subtitle = "LF vs C",
-    pCutoff = 0.05, 
-    FCcutoff = 0.2)
-
-EnhancedVolcano(PvO,
-    lab = PvO$ID,
-    x = 'logFC',
-    y = 'adj.P.Val',
-    legendPosition = "right",
-    legendLabSize = 12,
-    legendIconSize = 3,
-    labSize = 3,
-    subtitle = "POLA vs OPLA",
-    pCutoff = 0.05, 
-    FCcutoff = 0.2)
-
-#Interactive volcano plot for HF v LF (change the columns of the data frames to make it for other comparisons)
+#Interactive volcano plot for SFA v PUFA (change the columns of the data frames to make it for other comparisons)
 glXYPlot(x=efit1$coef[,1], y=efit1$lods[,1], xlab="logFC", ylab="logP", status=dt1[,1], counts=log2.cpm.filtered.norm, groups=group, launch = TRUE, sample.cols=group)
 
 
@@ -362,7 +338,7 @@ Avg.gene_expression.pivot <- pivot_longer(Avg.gene_expression,
 
 #  Filter for genes you want. grepl will pick out any with that phrase in it. Use " x|y|z|etc." notation to search for multiple genes. 
 graph <- Avg.gene_expression.pivot %>%
-  dplyr::filter(grepl('CD36', geneID))
+  dplyr::filter(grepl('PEX2', geneID))
 
 # Graph error bars were a step too far for me as they got messed up with the facet wrap
 ggbarplot(graph, "group", "lcpm", add = "mean_se", palette = "npg", legend = "none", fill = "group", xlab = "Media", ylab = "counts per million (log2)") +
@@ -371,7 +347,7 @@ ggbarplot(graph, "group", "lcpm", add = "mean_se", palette = "npg", legend = "no
   scale_x_discrete(labels = function(x) str_wrap(x, width = 1)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.22)))
 
-ggsave("Graphs/RNAseq CD36 Expression.png")
+#ggsave("Graphs/RNAseq CD36 Expression.png")
 
 ```
 
@@ -547,33 +523,33 @@ cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, 
 
 
 ``` {R SFAvPUFA pathway enrichment, warning=FALSE}
-setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/Pathview")
+setwd("Pathview")
 
 #This is the same as before
 fc.vector <- as.numeric(deg_SFAvPUFA_enrich[, 3])
 names(fc.vector) <- (deg_SFAvPUFA_enrich[, 2])
 de.names <- names(fc.vector)
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa01212",species  = "hsa")
 
 ```
 
 
-``` {R HFvC function enrichment analysis}
+``` {R OAvNF function enrichment analysis}
 #MSigDb Hallmarks
-diffGenes.HFvC <- rownames(filter(dt1, dt1$HFvC != 0))
+diffGenes.OAvNF <- rownames(filter(dt1, dt1$OAvNF != 0))
 
-diffGenes.HFvC <- HFvC[HFvC$ID %in% diffGenes.HFvC, ] %>%
+diffGenes.OAvNF <- OAvNF[OAvNF$ID %in% diffGenes.OAvNF, ] %>%
 rename("SYMBOL" = ID)
 
-diffGenes.HFvC <- diffGenes.HFvC %>% 
+diffGenes.OAvNF <- diffGenes.OAvNF %>% 
     dplyr::select(SYMBOL, t) %>% 
     na.omit() %>% 
     distinct() %>% 
     group_by(SYMBOL) %>% 
     summarize(stat=mean(t))
 
-ranks <- deframe(diffGenes.HFvC)
+ranks <- deframe(diffGenes.OAvNF)
 
 # Load the pathways into a named list
 pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
@@ -598,46 +574,46 @@ ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
   theme_minimal()
 
 #Kegg
-diffGenes.HFvC <- rownames(filter(dt1, dt1$HFvC != 0))
+diffGenes.OAvNF <- rownames(filter(dt1, dt1$OAvNF != 0))
 
-diffGenes.HFvC <- HFvC[HFvC$ID %in% diffGenes.HFvC, ] %>%
+diffGenes.OAvNF <- OAvNF[OAvNF$ID %in% diffGenes.OAvNF, ] %>%
 rename("SYMBOL" = ID)
 
-entrez <- bitr(diffGenes.HFvC$SYMBOL, fromType = "SYMBOL",
+entrez <- bitr(diffGenes.OAvNF$SYMBOL, fromType = "SYMBOL",
                  toType = "ENTREZID",
                  OrgDb="org.Hs.eg.db")
 
-deg_HFvC_enrich <- diffGenes.HFvC %>% left_join(entrez,.,by="SYMBOL")
+deg_OAvNF_enrich <- diffGenes.OAvNF %>% left_join(entrez,.,by="SYMBOL")
 
-HFvC_kegg_gene_list <- deg_HFvC_enrich$logFC
+OAvNF_kegg_gene_list <- deg_OAvNF_enrich$logFC
 
-names(HFvC_kegg_gene_list) <- deg_HFvC_enrich$ENTREZID
+names(OAvNF_kegg_gene_list) <- deg_OAvNF_enrich$ENTREZID
 
-HFvC_kegg_gene_list<-na.omit(HFvC_kegg_gene_list)
+OAvNF_kegg_gene_list<-na.omit(OAvNF_kegg_gene_list)
 
-HFvC_kegg_gene_list = sort(HFvC_kegg_gene_list, decreasing = TRUE)
+OAvNF_kegg_gene_list = sort(OAvNF_kegg_gene_list, decreasing = TRUE)
 
-HFvC_kk <- gseKEGG(geneList     = HFvC_kegg_gene_list,
+OAvNF_kk <- gseKEGG(geneList     = OAvNF_kegg_gene_list,
                organism     = "hsa")
 
-dotplot(HFvC_kk, showCategory = 5, title = "HFvC Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
- # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/HFvC GSEA.png")
+dotplot(OAvNF_kk, showCategory = 5, title = "OAvNF Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
+ # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/OAvNF GSEA.png")
 
-edox <- setReadable(HFvC_kk, 'org.Hs.eg.db', 'ENTREZID')
+edox <- setReadable(OAvNF_kk, 'org.Hs.eg.db', 'ENTREZID')
 
-cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=HFvC_kegg_gene_list)
+cnetplot(edox, categorySize="pvalue", node_label="category", showCategory = 10, cex_label_gene = 0.4, cex_label_category = 0.7, max.overlaps = 100, foldChange=OAvNF_kegg_gene_list)
 ```
 
 
-``` {R HFvC pathway enrichment, warning=FALSE}
-setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/Pathview")
+``` {R OAvNF pathway enrichment, warning=FALSE}
+setwd("Pathview")
 
 #This is the same as before
-fc.vector <- as.numeric(deg_HFvC_enrich[, 3])
-names(fc.vector) <- (deg_HFvC_enrich[, 2])
+fc.vector <- as.numeric(deg_OAvNF_enrich[, 3])
+names(fc.vector) <- (deg_OAvNF_enrich[, 2])
 de.names <- names(fc.vector)
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04060",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa04710",species  = "hsa")
 
 ```
 
